@@ -3,12 +3,13 @@ package qrm
 import (
 	"database/sql"
 	"fmt"
-	"github.com/go-jet/jet/v2/internal/utils"
-	"github.com/go-jet/jet/v2/qrm/internal"
-	"github.com/google/uuid"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/go-jet/jet/v2/internal/utils"
+	"github.com/go-jet/jet/v2/qrm/internal"
+	"github.com/google/uuid"
 )
 
 var scannerInterfaceType = reflect.TypeOf((*sql.Scanner)(nil)).Elem()
@@ -90,20 +91,21 @@ func newElemPtrValueForSlice(slicePtrValue reflect.Value) reflect.Value {
 	return reflect.New(elemType)
 }
 
-func getTypeName(structType reflect.Type, parentField *reflect.StructField) string {
+func getTypeName(structType reflect.Type, parentField *reflect.StructField, parentStructName string) string {
+
 	if parentField == nil {
-		return structType.Name()
+		return dotJoin(parentStructName, structType.Name())
 	}
 
 	aliasTag := parentField.Tag.Get("alias")
 
 	if aliasTag == "" {
-		return structType.Name()
+		return dotJoin(parentStructName, structType.Name())
 	}
 
 	aliasParts := strings.Split(aliasTag, ".")
 
-	return toCommonIdentifier(aliasParts[0])
+	return dotJoin(parentStructName, toCommonIdentifier(aliasParts[0]))
 }
 
 func getTypeAndFieldName(structType string, field reflect.StructField) (string, string) {
@@ -362,6 +364,23 @@ func concat(stringList ...string) string {
 	var b strings.Builder
 	for _, str := range stringList {
 		b.WriteString(str)
+	}
+	return b.String()
+}
+
+// dotJoin joins the strings with a dot, without leading/trailing dots and without repeated dots
+func dotJoin(stringList ...string) string {
+	// For our usecase something like the following line *could* be enough, but to be sure (and to have better performance) we implement it from scratch
+	// return strings.ReplaceAll(strings.Trim(strings.Join(stringList, "."), "."),"..",".")
+
+	var b strings.Builder
+	for _, str := range stringList {
+		if str != "" {
+			if b.Len() > 0 {
+				b.WriteByte('.')
+			}
+			b.WriteString(str)
+		}
 	}
 	return b.String()
 }

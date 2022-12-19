@@ -81,21 +81,26 @@ type fieldMapping struct {
 	implementsScanner bool
 }
 
-func (s *ScanContext) getTypeInfo(structType reflect.Type, parentField *reflect.StructField) typeInfo {
+// getTypeInfo analyzes the current struct and matches its field with column names
+func (s *ScanContext) getTypeInfo(structType reflect.Type, parentField *reflect.StructField, parentStructName string) typeInfo {
 
 	typeMapKey := structType.String()
 
 	if parentField != nil {
-		typeMapKey = concat(typeMapKey, string(parentField.Tag))
+		// even if strictly speaking the type info does not depend on parent struct,
+		// we need to incude it in order for the mapping to work
+		// Ideally we should separate the typeInfo cache from the mapping info
+		typeMapKey = concat(parentStructName, typeMapKey, string(parentField.Tag))
 	}
 
 	if typeInfo, ok := s.typeInfoMap[typeMapKey]; ok {
 		return typeInfo
 	}
 
-	typeName := getTypeName(structType, parentField)
-
+	typeName := getTypeName(structType, parentField, parentStructName)
 	newTypeInfo := typeInfo{}
+
+	//fmt.Println("typeName:", typeName)
 
 	for i := 0; i < structType.NumField(); i++ {
 		field := structType.Field(i)
@@ -180,7 +185,7 @@ func (s *ScanContext) getGroupKeyInfo(
 	typeVisited.push(&structType)
 	defer typeVisited.pop()
 
-	typeName := getTypeName(structType, parentField)
+	typeName := getTypeName(structType, parentField, "")
 	primaryKeyOverwrites := parentFieldPrimaryKeyOverwrite(parentField)
 
 	for i := 0; i < structType.NumField(); i++ {
@@ -211,22 +216,40 @@ func (s *ScanContext) getGroupKeyInfo(
 	return ret
 }
 
-func (s *ScanContext) typeToColumnIndex(typeName, fieldName string) int {
-	var key string
+func (s *ScanContext) typeToColumnName(typeName, fieldName string) string {
+	return strings.ToLower(dotJoin(typeName, fieldName))
+}
 
-	if typeName != "" {
-		key = strings.ToLower(typeName + "." + fieldName)
-	} else {
-		key = strings.ToLower(fieldName)
-	}
-
-	index, ok := s.commonIdentToColumnIndex[key]
-
-	if !ok {
+func (s *ScanContext) nameToColumnIndex(colName string /*, strict bool*/) int {
+	/* if strict {
+		if index, ok := s.commonIdentToColumnIndex[colName]; ok {
+			return index
+		}
 		return -1
-	}
+	} */
 
-	return index
+	j := 0
+	for i := 0; i >= 0; i = strings.Index(colName, ".") {
+		if i != 0 {
+			j = i + 1 //we want to skip the dot
+		}
+		colName = colName[j:]
+
+		//fmt.Print("matching:", colName, "...")
+
+		if index, ok := s.commonIdentToColumnIndex[colName]; ok {
+			//fmt.Println("found")
+			return index
+		}
+
+		//fmt.Println()
+
+	}
+	return -1
+}
+
+func (s *ScanContext) typeToColumnIndex(typeName, fieldName string) int {
+	return s.nameToColumnIndex(s.typeToColumnName(typeName, fieldName))
 }
 
 // rowElemValue always returns non-ptr value,
